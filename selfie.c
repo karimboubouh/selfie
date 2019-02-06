@@ -882,8 +882,8 @@ void emit_mul(uint64_t rd, uint64_t rs1, uint64_t rs2);
 void emit_divu(uint64_t rd, uint64_t rs1, uint64_t rs2);
 void emit_remu(uint64_t rd, uint64_t rs1, uint64_t rs2);
 void emit_sltu(uint64_t rd, uint64_t rs1, uint64_t rs2);
-void emit_sll(uint64_t rd, uint64_t rs1, uint64_t immediate); /************/
-void emit_srl(uint64_t rd, uint64_t rs1, uint64_t immediate);  /************/
+void emit_sll(uint64_t rd, uint64_t rs1, uint64_t immediate); 
+void emit_srl(uint64_t rd, uint64_t rs1, uint64_t immediate);  
 
 void emit_ld(uint64_t rd, uint64_t rs1, uint64_t immediate);
 void emit_sd(uint64_t rs1, uint64_t immediate, uint64_t rs2);
@@ -3166,7 +3166,6 @@ uint64_t is_comparison() {
     return 0;
 }
 
-/*************/
 uint64_t is_shift(){
   if (symbol == SYM_SLL)
     return 1;
@@ -3174,7 +3173,7 @@ uint64_t is_shift(){
     return 1;
   else
     return 0;
-}/*************/
+}
 
 
 uint64_t look_for_factor() {
@@ -3909,7 +3908,7 @@ uint64_t compile_simple_expression() {
 
   return ltype;
 }
-/**************************************/
+
 // compile shifting
 uint64_t compile_expWise(){
   uint64_t ltype;
@@ -3961,7 +3960,7 @@ uint64_t compile_expWise(){
   return ltype;
 }
 
-/***************************************/
+
 uint64_t compile_expression() {
   uint64_t ltype;
   uint64_t operator_symbol;
@@ -3969,7 +3968,7 @@ uint64_t compile_expression() {
 
   // assert: n = allocated_temporaries
 
-  ltype = compile_expWise(); /**************************************/
+  ltype = compile_expWise(); 
 
   // assert: allocated_temporaries == n + 1
 
@@ -3979,7 +3978,7 @@ uint64_t compile_expression() {
 
     get_symbol();
 
-    rtype = compile_expWise(); /**************************************/
+    rtype = compile_expWise(); 
 
     // assert: allocated_temporaries == n + 2
 
