@@ -384,6 +384,8 @@ uint64_t SYM_LT           = 24; // <
 uint64_t SYM_LEQ          = 25; // <=
 uint64_t SYM_GT           = 26; // >
 uint64_t SYM_GEQ          = 27; // >=
+uint64_t SYM_SLL          = 31; // << /*************/
+uint64_t SYM_SRL          = 32; // >> /*************/
 
 // symbols for bootstrapping
 
@@ -589,6 +591,7 @@ uint64_t is_literal();
 uint64_t is_star_or_div_or_modulo();
 uint64_t is_plus_or_minus();
 uint64_t is_comparison();
+uint64_t is_shift(); /*********/
 
 uint64_t look_for_factor();
 uint64_t look_for_statement();
@@ -616,6 +619,7 @@ uint64_t compile_call(char* procedure);
 uint64_t compile_factor();
 uint64_t compile_term();
 uint64_t compile_simple_expression();
+uint64_t compile_expWise();
 uint64_t compile_expression();
 void     compile_while();
 void     compile_if();
@@ -878,6 +882,8 @@ void emit_mul(uint64_t rd, uint64_t rs1, uint64_t rs2);
 void emit_divu(uint64_t rd, uint64_t rs1, uint64_t rs2);
 void emit_remu(uint64_t rd, uint64_t rs1, uint64_t rs2);
 void emit_sltu(uint64_t rd, uint64_t rs1, uint64_t rs2);
+void emit_sll(uint64_t rd, uint64_t rs1, uint64_t immediate); /************/
+void emit_srl(uint64_t rd, uint64_t rs1, uint64_t immediate);  /************/
 
 void emit_ld(uint64_t rd, uint64_t rs1, uint64_t immediate);
 void emit_sd(uint64_t rs1, uint64_t immediate, uint64_t rs2);
@@ -3160,6 +3166,17 @@ uint64_t is_comparison() {
     return 0;
 }
 
+/*************/
+uint64_t is_shift(){
+  if (symbol == SYM_SLL)
+    return 1;
+  else if (symbol == SYM_SRL)
+    return 1;
+  else
+    return 0;
+}/*************/
+
+
 uint64_t look_for_factor() {
   if (symbol == SYM_ASTERISK)
     return 0;
@@ -3892,7 +3909,59 @@ uint64_t compile_simple_expression() {
 
   return ltype;
 }
+/**************************************/
+// compile shifting
+uint64_t compile_expWise(){
+  uint64_t ltype;
+  uint64_t operator_symbol;
+  uint64_t rtype;
 
+  ltype = compile_simple_expression();
+  // assert: allocated_temporaries == n << 1
+
+  // << or >> ?
+  while (is_shift()) {
+    operator_symbol = symbol;
+
+    get_symbol();
+
+    rtype = compile_simple_expression();
+
+    // assert: allocated_temporaries == n << 2
+
+    if (operator_symbol == SYM_SLL) {
+      if (ltype == UINT64STAR_T) {
+        if (rtype == UINT64_T)
+          // UINT64STAR_T << UINT64_T
+        //  emit_left_shift_by(current_temporary(), 1);
+        else
+          // UINT64STAR_T + UINT64STAR_T
+          syntax_error_message("(uint64_t*) << (uint64_t*) is undefined");
+      }
+      //emit_sll(previous_temporary(), previous_temporary(), current_temporary());
+
+    } else if (operator_symbol == SYM_SRL) {
+      if (ltype == UINT64STAR_T) {
+        if (rtype == UINT64_T) {
+          // UINT64STAR_T >> UINT64_T
+          // pointer arithmetic: factor of 2^3 of integer operand
+        //  emit_left_shift_by(current_temporary(), 3);
+        //  emit_srl(previous_temporary(), previous_temporary(), current_temporary());
+      }
+      } else if (rtype == UINT64STAR_T)
+        // UINT64_T >> UINT64STAR_T
+        syntax_error_message("(uint64_t) >> (uint64_t*) is undefined");
+      else
+        // UINT64_T >> UINT64_T
+        //emit_srl(previous_temporary(), previous_temporary(), current_temporary());
+    }
+
+    tfree(1);
+  }
+  return ltype;
+}
+
+/***************************************/
 uint64_t compile_expression() {
   uint64_t ltype;
   uint64_t operator_symbol;
@@ -3900,7 +3969,7 @@ uint64_t compile_expression() {
 
   // assert: n = allocated_temporaries
 
-  ltype = compile_simple_expression();
+  ltype = compile_expWise(); /**************************************/
 
   // assert: allocated_temporaries == n + 1
 
@@ -3910,7 +3979,7 @@ uint64_t compile_expression() {
 
     get_symbol();
 
-    rtype = compile_simple_expression();
+    rtype = compile_expWise(); /**************************************/
 
     // assert: allocated_temporaries == n + 2
 
@@ -8984,6 +9053,7 @@ char* replace_extension(char* filename, uint64_t e) {
 }
 
 uint64_t monster(uint64_t* to_context) {
+  uint64_t b;
   uint64_t timeout;
   uint64_t* from_context;
 
@@ -9014,6 +9084,8 @@ uint64_t monster(uint64_t* to_context) {
   print("(set-option :produce-models true)\n");
   print("(set-option :incremental true)\n");
   print("(set-logic QF_BV)\n\n");
+
+  b = 0;
 
   timeout = max_execution_depth;
 
