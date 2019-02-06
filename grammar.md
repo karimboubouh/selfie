@@ -57,7 +57,7 @@ call             = identifier "(" [ expression { "," expression } ] ")" .
 
 expression       = expWise [ ( "==" | "!=" | "<" | ">" | "<=" | ">=" ) expWise ] .
 
-expWise          = simpleExpression ">>" | "<<" simpleExpression .
+expWise          = simpleExpression {(">>" | "<<") simpleExpression} .
 
 simpleExpression = term { ( "+" | "-" ) term } .
 
