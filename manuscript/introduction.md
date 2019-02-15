@@ -1,4 +1,4 @@
-{mainmatter}
+printf1("\nA7 : %s \n", a7);{mainmatter}
 
 # 1. Introduction
 
