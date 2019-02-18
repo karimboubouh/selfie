@@ -103,12 +103,9 @@ void exit(int code);
 
 uint64_t read(uint64_t fd, uint64_t* buffer, uint64_t bytes_to_read);
 uint64_t write(uint64_t fd, uint64_t* buffer, uint64_t bytes_to_write);
-int fork();
-// uint64_t wait();
-uint64_t wait(uint64_t *status);
 
 // selfie bootstraps char to uint64_t!
-uint64_t open(char *filename, uint64_t flags, uint64_t mode);
+uint64_t open(char* filename, uint64_t flags, uint64_t mode);
 
 // selfie bootstraps void* and unsigned long to uint64_t* and uint64_t, respectively!
 void* malloc(unsigned long);
@@ -981,12 +978,6 @@ void     implement_openat(uint64_t* context);
 void emit_malloc();
 void implement_brk(uint64_t* context);
 
-void emit_fork();
-void implement_fork(uint64_t *context);
-
-void emit_wait();
-void implement_wait(uint64_t *context);
-
 // ------------------------ GLOBAL CONSTANTS -----------------------
 
 uint64_t debug_read  = 0;
@@ -999,8 +990,6 @@ uint64_t SYSCALL_READ   = 63;
 uint64_t SYSCALL_WRITE  = 64;
 uint64_t SYSCALL_OPENAT = 56;
 uint64_t SYSCALL_BRK    = 214;
-uint64_t SYSCALL_FORK   = 444;
-uint64_t SYSCALL_WAIT   = 333;
 
 /* DIRFD_AT_FDCWD corresponds to AT_FDCWD in fcntl.h and
    is passed as first argument of the openat system call
@@ -1393,7 +1382,6 @@ uint64_t* new_context();
 
 void init_context(uint64_t* context, uint64_t* parent, uint64_t* vctxt);
 void copy_context(uint64_t* original, uint64_t location, char* condition, uint64_t depth);
-uint64_t *fork_context(uint64_t *original, uint64_t location, char *condition, uint64_t depth);
 
 uint64_t* find_context(uint64_t* parent, uint64_t* vctxt);
 
@@ -1525,7 +1513,7 @@ uint64_t* used_contexts = (uint64_t*) 0; // doubly-linked list of used contexts
 uint64_t* free_contexts = (uint64_t*) 0; // singly-linked list of free contexts
 
 // ------------------------- INITIALIZATION ------------------------
-                  
+
 void reset_microkernel() {
   current_context = (uint64_t*) 0;
 
@@ -4885,9 +4873,6 @@ void selfie_compile() {
   emit_open();
   emit_malloc();
   emit_switch();
-  emit_fork();
-  emit_wait();
-  
 
   // implicitly declare main procedure in global symbol table
   // copy "main" string into zeroed double word to obtain unique hash
@@ -6155,82 +6140,6 @@ void implement_write(uint64_t* context) {
   }
 }
 
-void emit_fork()
-{
-  // add fork entry to symbol table
-  create_symbol_table_entry(LIBRARY_TABLE, "fork", 0, PROCEDURE, UINT64_T, 0, binary_length);
-  // load the fork syscall number
-  emit_addi(REG_A7, REG_ZR, SYSCALL_FORK);
-  // Invoke syscall
-  emit_ecall();
-  // jump back to caller, return value is in REG_A0
-  emit_jalr(REG_ZR, REG_RA, 0);
-}
-
-void implement_fork(uint64_t *context)
-{
-
-  // new conext
-  // add context to a list
-  // return process id to child and 0 to current
-  // end.
-
-  // save the returned value in register A0
-  *(get_regs(context) + REG_A0) = fork();
-  // set the program counter to next instruction
-  set_pc(context, get_pc(context) + INSTRUCTIONSIZE);
-}
-
-// void implement_fork(uint64_t *context){
-//   if (disassemble) {
-//     print("(fork): "); print_register_hexadecimal(REG_A0); print(" |- ->\n");
-//   }
-
-//   if (fork_context(current_context, pc + INSTRUCTIONSIZE, path_condition, max_execution_depth - timer)){
-//     printf1("-------------------------------------> FORK PID : %s \n","42");
-//     *(get_regs(context) + REG_A0) = 0;
-//   } else {
-//     *(get_regs(context) + REG_A0) = -1;
-//   }
-    
-//   set_pc(context, get_pc(context) + INSTRUCTIONSIZE);
-// }
-
-void emit_wait()
-{
-  // add fork entry to symbol table
-  create_symbol_table_entry(LIBRARY_TABLE, "wait", 0, PROCEDURE, UINT64_T, 0, binary_length);
-  // add *status argument in the register A0
-  emit_ld(REG_A1, REG_SP, 0);
-  emit_addi(REG_SP, REG_SP, REGISTERSIZE);
-  // load the fork syscall number
-  emit_addi(REG_A7, REG_ZR, SYSCALL_WAIT);
-  // Invoke syscall
-  emit_ecall();
-  // jump back to caller, return value is in REG_A0
-  emit_jalr(REG_ZR, REG_RA, 0);
-}
-
-void implement_wait(uint64_t *context)
-{
-  // get the parent context
-  // check if any child finishes
-  // if yes : resume the parent work
-  // else : block the parent process until one of the child processes finishes.
-
-  // save the returned value in register A0
-  // uint64_t x = 10;
-  // *(get_regs(context) + REG_A0) = wait(&x);
-  // set the program counter to next instruction
-  uint64_t* status;
-  status = malloc(8);
-  
-  *(get_regs(context) + REG_A0) = wait(status);
-  *(get_regs(context) + REG_A1) = *status;
-
-  set_pc(context, get_pc(context) + INSTRUCTIONSIZE);
-}
-
 void emit_open() {
   create_symbol_table_entry(LIBRARY_TABLE, "open", 0, PROCEDURE, UINT64_T, 0, binary_length);
 
@@ -6568,7 +6477,7 @@ void implement_switch() {
     print_register_value(REG_A1);
     print(" |- ");
     print_register_value(REG_A6);
-  }   
+  }
 
   to_context = (uint64_t*) *(registers + REG_A0);
   timeout    =             *(registers + REG_A1);
@@ -8322,9 +8231,8 @@ void init_context(uint64_t* context, uint64_t* parent, uint64_t* vctxt) {
   }
 }
 
-void copy_context(uint64_t *original, uint64_t location, char *condition, uint64_t depth)
-{
-  uint64_t *context;
+void copy_context(uint64_t* original, uint64_t location, char* condition, uint64_t depth) {
+  uint64_t* context;
   uint64_t r;
 
   context = new_context();
@@ -8335,8 +8243,7 @@ void copy_context(uint64_t *original, uint64_t location, char *condition, uint64
 
   r = 0;
 
-  while (r < NUMBEROFREGISTERS)
-  {
+  while (r < NUMBEROFREGISTERS) {
     *(get_regs(context) + r) = *(get_regs(original) + r);
 
     r = r + 1;
@@ -8362,8 +8269,7 @@ void copy_context(uint64_t *original, uint64_t location, char *condition, uint64
 
   r = 0;
 
-  while (r < NUMBEROFREGISTERS)
-  {
+  while (r < NUMBEROFREGISTERS) {
     *(get_symbolic_regs(context) + r) = *(get_symbolic_regs(original) + r);
 
     r = r + 1;
@@ -8372,65 +8278,6 @@ void copy_context(uint64_t *original, uint64_t location, char *condition, uint64
   set_related_context(context, symbolic_contexts);
 
   symbolic_contexts = context;
-}
-
-uint64_t *fork_context(uint64_t *original, uint64_t location, char *condition, uint64_t depth)
-{
-  uint64_t *context;
-  uint64_t r;
-  uint64_t pid;
-
-  context = new_context();
-
-  set_pc(context, location);
-
-  set_regs(context, smalloc(NUMBEROFREGISTERS * REGISTERSIZE));
-
-  r = 0;
-  pid = 42;
-
-  while (r < NUMBEROFREGISTERS)
-  {
-    *(get_regs(context) + r) = *(get_regs(original) + r);
-
-    r = r + 1;
-  }
-
-  // Return value for child process 
-  *(get_regs(context) + REG_A0) = pid;
-
-  set_pt(context, pt);
-
-  set_lo_page(context, get_lo_page(original));
-  set_me_page(context, get_me_page(original));
-  set_hi_page(context, get_hi_page(original));
-  set_exception(context, get_exception(original));
-  set_faulting_page(context, get_faulting_page(original));
-  set_exit_code(context, get_exit_code(original));
-  set_parent(context, get_parent(original));
-  set_virtual_context(context, get_virtual_context(original));
-  set_name(context, get_name(original));
-
-  set_execution_depth(context, depth);
-  set_path_condition(context, condition);
-  set_symbolic_memory(context, symbolic_memory);
-
-  set_symbolic_regs(context, smalloc(NUMBEROFREGISTERS * REGISTERSIZE));
-
-  r = 0;
-
-  while (r < NUMBEROFREGISTERS)
-  {
-    *(get_symbolic_regs(context) + r) = *(get_symbolic_regs(original) + r);
-
-    r = r + 1;
-  }
-
-  set_related_context(context, symbolic_contexts);
-
-  symbolic_contexts = context;
-
-  return context;
 }
 
 uint64_t* find_context(uint64_t* parent, uint64_t* vctxt) {
@@ -8850,14 +8697,9 @@ uint64_t handle_system_call(uint64_t* context) {
     implement_write(context);
   else if (a7 == SYSCALL_OPENAT)
     implement_openat(context);
-  else if (a7 == SYSCALL_FORK){
-    implement_fork(context);
-    // implement_wait(context);
-  }
-  else if (a7 == SYSCALL_WAIT)
-    implement_wait(context);
   else if (a7 == SYSCALL_EXIT) {
-        implement_exit(context);
+    implement_exit(context);
+
     // TODO: exit only if all contexts have exited
     return EXIT;
   } else {
