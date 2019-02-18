@@ -104,12 +104,11 @@ void exit(int code);
 uint64_t read(uint64_t fd, uint64_t* buffer, uint64_t bytes_to_read);
 uint64_t write(uint64_t fd, uint64_t* buffer, uint64_t bytes_to_write);
 int fork();
-uint64_t wait();
-    // uint64_t* wait(uint64_t *status);
+// uint64_t wait();
+uint64_t wait(uint64_t *status);
 
-    // selfie bootstraps char to uint64_t!
-    uint64_t
-    open(char *filename, uint64_t flags, uint64_t mode);
+// selfie bootstraps char to uint64_t!
+uint64_t open(char *filename, uint64_t flags, uint64_t mode);
 
 // selfie bootstraps void* and unsigned long to uint64_t* and uint64_t, respectively!
 void* malloc(unsigned long);
@@ -1856,9 +1855,9 @@ char* store_character(char* s, uint64_t i, uint64_t c) {
 }
 
 char* string_alloc(uint64_t l) {
-	// allocates zeroed memory for a string of l characters
+  // allocates zeroed memory for a string of l characters
   // plus a null terminator aligned to machine word size
-	return (char*) zalloc(l + 1);
+  return (char*) zalloc(l + 1);
 }
 
 uint64_t string_length(char* s) {
@@ -6201,6 +6200,9 @@ void emit_wait()
 {
   // add fork entry to symbol table
   create_symbol_table_entry(LIBRARY_TABLE, "wait", 0, PROCEDURE, UINT64_T, 0, binary_length);
+  // add *status argument in the register A0
+  emit_ld(REG_A1, REG_SP, 0);
+  emit_addi(REG_SP, REG_SP, REGISTERSIZE);
   // load the fork syscall number
   emit_addi(REG_A7, REG_ZR, SYSCALL_WAIT);
   // Invoke syscall
@@ -6220,7 +6222,12 @@ void implement_wait(uint64_t *context)
   // uint64_t x = 10;
   // *(get_regs(context) + REG_A0) = wait(&x);
   // set the program counter to next instruction
-  *(get_regs(context) + REG_A0) = wait();
+  uint64_t* status;
+  status = malloc(8);
+  
+  *(get_regs(context) + REG_A0) = wait(status);
+  *(get_regs(context) + REG_A1) = *status;
+
   set_pc(context, get_pc(context) + INSTRUCTIONSIZE);
 }
 
