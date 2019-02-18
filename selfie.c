@@ -266,6 +266,9 @@ uint64_t output_fd   = 1; // 1 is file descriptor of standard output
 char*    output_buffer = (char*) 0;
 uint64_t output_cursor = 0; // cursor for output buffer
 
+// 42 :: Global process id counter starts for example from 1500
+uint64_t pid = 1500;
+
 // ------------------------- INITIALIZATION ------------------------
 
 void init_library() {
@@ -978,6 +981,10 @@ void     implement_openat(uint64_t* context);
 void emit_malloc();
 void implement_brk(uint64_t* context);
 
+// 42 :: Mipster fork syscall.
+void emit_fork();
+void implement_fork(uint64_t *context);
+
 // ------------------------ GLOBAL CONSTANTS -----------------------
 
 uint64_t debug_read  = 0;
@@ -990,6 +997,10 @@ uint64_t SYSCALL_READ   = 63;
 uint64_t SYSCALL_WRITE  = 64;
 uint64_t SYSCALL_OPENAT = 56;
 uint64_t SYSCALL_BRK    = 214;
+
+// 42 :: frok & wait syscall numbers
+uint64_t SYSCALL_FORK = 444;
+uint64_t SYSCALL_WAIT = 333;
 
 /* DIRFD_AT_FDCWD corresponds to AT_FDCWD in fcntl.h and
    is passed as first argument of the openat system call
@@ -1382,6 +1393,7 @@ uint64_t* new_context();
 
 void init_context(uint64_t* context, uint64_t* parent, uint64_t* vctxt);
 void copy_context(uint64_t* original, uint64_t location, char* condition, uint64_t depth);
+uint64_t fork_context(uint64_t *original, uint64_t location, char *condition, uint64_t depth);
 
 uint64_t* find_context(uint64_t* parent, uint64_t* vctxt);
 
@@ -1417,7 +1429,7 @@ uint64_t* delete_context(uint64_t* context, uint64_t* from);
 // +----+-----------------+
 
 uint64_t* allocate_context() {
-  return smalloc(7 * SIZEOFUINT64STAR + 9 * SIZEOFUINT64);
+  return smalloc(7 * SIZEOFUINT64STAR + 13 * SIZEOFUINT64);
 }
 
 uint64_t* allocate_symbolic_context() {
@@ -1464,6 +1476,9 @@ uint64_t* get_symbolic_memory(uint64_t* context) { return (uint64_t*) *(context 
 uint64_t* get_symbolic_regs(uint64_t* context)   { return (uint64_t*) *(context + 19); }
 uint64_t* get_related_context(uint64_t* context) { return (uint64_t*) *(context + 20); }
 
+// 42 :: get process id of context
+uint64_t get_pid(uint64_t *context) { return *(context + 21); }
+
 void set_next_context(uint64_t* context, uint64_t* next)      { *context        = (uint64_t) next; }
 void set_prev_context(uint64_t* context, uint64_t* prev)      { *(context + 1)  = (uint64_t) prev; }
 void set_pc(uint64_t* context, uint64_t pc)                   { *(context + 2)  = pc; }
@@ -1480,6 +1495,9 @@ void set_exit_code(uint64_t* context, uint64_t code)          { *(context + 12) 
 void set_parent(uint64_t* context, uint64_t* parent)          { *(context + 13) = (uint64_t) parent; }
 void set_virtual_context(uint64_t* context, uint64_t* vctxt)  { *(context + 14) = (uint64_t) vctxt; }
 void set_name(uint64_t* context, char* name)                  { *(context + 15) = (uint64_t) name; }
+
+// 42 :: set process id for each context
+void set_pid(uint64_t *context, uint64_t pid) { *(context + 21) = pid; }
 
 void set_execution_depth(uint64_t* context, uint64_t depth)    { *(context + 16) =            depth; }
 void set_path_condition(uint64_t* context, char* path)         { *(context + 17) = (uint64_t) path; }
@@ -1585,6 +1603,7 @@ uint64_t EXITCODE_UNKNOWNSYSCALL         = 10;
 uint64_t EXITCODE_MULTIPLEEXCEPTIONERROR = 11;
 uint64_t EXITCODE_SYMBOLICEXECUTIONERROR = 12;
 uint64_t EXITCODE_UNCAUGHTEXCEPTION      = 13;
+uint64_t EXITCODE_FORKEXCEPTION          = 14;
 
 uint64_t SYSCALL_BITWIDTH = 32; // integer bit width for system calls
 
@@ -4873,6 +4892,9 @@ void selfie_compile() {
   emit_open();
   emit_malloc();
   emit_switch();
+  
+  // 42 ::
+  emit_fork();
 
   // implicitly declare main procedure in global symbol table
   // copy "main" string into zeroed double word to obtain unique hash
@@ -6406,6 +6428,36 @@ void implement_brk(uint64_t* context) {
   set_pc(context, get_pc(context) + INSTRUCTIONSIZE);
 }
 
+
+// 42 :: emit syscall fork 
+void emit_fork()
+{
+    // add fork entry to symbol table
+    create_symbol_table_entry(LIBRARY_TABLE, "fork", 0, PROCEDURE, UINT64_T, 0, binary_length);
+    // load the fork syscall number
+    emit_addi(REG_A7, REG_ZR, SYSCALL_FORK);
+    // Invoke syscall
+    emit_ecall();
+    // jump back to caller, return value is in REG_A0
+    emit_jalr(REG_ZR, REG_RA, 0);
+}
+
+// 42 :: implementation of the syscall fork 
+void implement_fork(uint64_t *context)
+{
+    uint64_t child_pid;
+
+    // create a new context from the current context
+    child_pid = fork_context(context, pc + INSTRUCTIONSIZE, path_condition, max_execution_depth - timer);
+    
+    if (child_pid){
+        *(get_regs(context) + REG_A0) = child_pid;
+      } else {
+        *(get_regs(context) + REG_A0) = -1;
+      }
+
+    set_pc(context, get_pc(context) + INSTRUCTIONSIZE);
+}
 
 // -----------------------------------------------------------------
 // ----------------------- HYPSTER SYSCALLS ------------------------
@@ -8280,6 +8332,71 @@ void copy_context(uint64_t* original, uint64_t location, char* condition, uint64
   symbolic_contexts = context;
 }
 
+
+uint64_t fork_context(uint64_t *original, uint64_t location, char *condition, uint64_t depth)
+{
+    uint64_t *context;
+    uint64_t r;
+    uint64_t *original_table;
+    uint64_t *table;
+    uint64_t page;
+    uint64_t hi;
+    uint64_t frame;
+
+    context = new_context();
+
+    set_pc(context, location);
+
+    set_regs(context, smalloc(NUMBEROFREGISTERS * REGISTERSIZE));
+    r = 0;
+    while (r < NUMBEROFREGISTERS) {
+        *(get_regs(context) + r) = *(get_regs(original) + r);
+        r = r + 1;
+    }
+
+    // 42 :: hard copy page table
+    original_table = get_pt(original);
+    set_pt(context, smalloc(VIRTUALMEMORYSIZE / PAGESIZE * REGISTERSIZE));
+    set_lo_page(context, 0);
+    set_me_page(context, 0);
+    set_hi_page(context, get_page_of_virtual_address(VIRTUALMEMORYSIZE - REGISTERSIZE));
+    set_program_break(context, get_original_break(original));
+
+    table = get_pt(context);
+    page = get_lo_page(context);
+    hi = get_hi_page(context);
+
+    while (page <= hi) {
+        frame = frame_for_page(original_table, page);
+        *(table + page) = frame;
+        page = page + 1;
+    }
+    // set_exception(original, EXCEPTION_NOEXCEPTION);
+    //set_exception(original, EXITCODE_FORKEXCEPTION);
+    set_faulting_page(context, get_faulting_page(original));
+    set_exit_code(context, get_exit_code(original));
+    set_parent(context, original);
+    set_virtual_context(context, get_virtual_context(original));
+    set_name(context, get_name(original));
+    set_pid(original, pid);
+    pid = pid + 1;
+    set_pid(context, 0);
+
+    // // symbolic
+
+    set_execution_depth(context, depth);
+    set_path_condition(context, condition);
+    set_symbolic_memory(context, (uint64_t *)0);
+    set_symbolic_regs(context, zalloc(NUMBEROFREGISTERS * REGISTERSIZE));
+    set_related_context(context, symbolic_contexts);
+    
+    symbolic_contexts = context;
+
+    // // TODO check for everything went ok then return child pid, otherwise send 0
+
+    return get_pid(original);
+}
+
 uint64_t* find_context(uint64_t* parent, uint64_t* vctxt) {
   uint64_t* context;
 
@@ -8697,6 +8814,8 @@ uint64_t handle_system_call(uint64_t* context) {
     implement_write(context);
   else if (a7 == SYSCALL_OPENAT)
     implement_openat(context);
+  else if (a7 == SYSCALL_FORK)
+    implement_fork(context);
   else if (a7 == SYSCALL_EXIT) {
     implement_exit(context);
 
@@ -8720,6 +8839,13 @@ uint64_t handle_page_fault(uint64_t* context) {
   map_page(context, get_faulting_page(context), (uint64_t) palloc());
 
   return DONOTEXIT;
+}
+
+uint64_t handle_fork(uint64_t *context)
+{
+    set_exception(context, EXITCODE_FORKEXCEPTION);
+
+    return DONOTEXIT;
 }
 
 uint64_t handle_division_by_zero(uint64_t* context) {
@@ -8765,6 +8891,8 @@ uint64_t handle_exception(uint64_t* context) {
     return handle_system_call(context);
   else if (exception == EXCEPTION_PAGEFAULT)
     return handle_page_fault(context);
+  else if (exception == EXITCODE_FORKEXCEPTION)
+    return handle_fork(context);
   else if (exception == EXCEPTION_DIVISIONBYZERO)
     return handle_division_by_zero(context);
   else if (exception == EXCEPTION_TIMER)
